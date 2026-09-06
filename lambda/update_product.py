@@ -1,25 +1,32 @@
 import json
-from utils import create_response, PRODUCTS_DB
+import products_db
+from utils import create_response
+from product_schema import ProductInput
+from pydantic import ValidationError
 
 def handler(event, context):
     try:
-        path_params=event.get("pathParameters", {})
-        product_id = path_params.get("id")
-        if not product_id or product_id not in PRODUCTS_DB:
-            return create_response(404, {"error": "Product not found"})
-        
-        if not event.get("body"):
-            return create_response(400, {"error": "Missing request body"})
-        body = json.loads(event["body"])
-        product = PRODUCTS_DB[product_id]
-        
-        product["name"] = body.get("name", product["name"])
-        product["price"] = body.get("price", product["price"])
-        product["category"] = body.get("category", product["category"])
+        body = event.get("body") or ""
+        product_id = (event.get("pathParameters") or {}).get("id")
 
-        return create_response(200, product)
-    except json.JSONDecodeError:
-        return create_response(400, {"error": "Invalid JSON format"})
+        if not product_id:
+            return create_response(400, {"error": "Product id is required"})
+
+        raw_data = json.loads(body)
+        product_input = ProductInput(**raw_data)
+        validated_data = product_input.model_dump()
+
+        user_arn = event.get("requestContext", {}).get("identity", {}).get("userArn", "unknown")
+        updated = products_db.update_product(product_id, validated_data, user_arn)
+
+        return create_response(200, updated)
+    except json.JSONDecodeError as e:
+        return create_response(400, {"error": f"Invalid JSON: {str(e)}"})
+    except ValidationError as e:
+        errors = [f"{err['loc'][0]}: {err['msg']}" for err in e.errors()]
+        return create_response(400, {"error": f"Validation failed: {', '.join(errors)}"})
+    except ValueError as e:
+        return create_response(404, {"error": str(e)})
     except Exception as e:
-        print(f"Error: {str(e)}")
-        return create_response(500, {"error": "Internal server error"})
+        print(f"Unexpected error: {str(e)}")
+        return create_response(500, {"error": f"Internal server error - {str(e)}"})

@@ -1,29 +1,33 @@
-import json
-import uuid
-from utils import create_response, PRODUCTS_DB
+import json, uuid, products_db
+from utils import create_response
+from product_schema import ProductInput
+from pydantic import ValidationError
 
 def handler(event, context):
+    body = event.get("body") or ""
     try:
-        if not event.get("body"):
-            return create_response(400, {"error": "Missing request body"})
+        raw_data = json.loads(body)
 
-        body = json.loads(event["body"])
-        if "name" not in body or "price" not in body:
-            return create_response(400, {"error": "Fields 'name' and 'price' are required"})
+        if "id" in raw_data:
+            return create_response(400, {"error": "Product id is not allowed"})
 
-        new_id = f"prod_{uuid.uuid4().hex[:6]}"
-        new_product = {
-            "id": new_id,
-            "name": body["name"],
-            "price": body["price"],
-            "category": body.get("category", "Uncategorized")
-        }
+        product_input = ProductInput(**raw_data)
+        validated_data = product_input.model_dump()
 
-        PRODUCTS_DB[new_id] = new_product
-        return create_response(201, new_product)
-    
-    except json.JSONDecodeError:
-        return create_response(400, {"error": "Invalid JSON format"})
+        product_id = str(uuid.uuid4())
+        validated_data["id"] = product_id
+
+        user_arn = event.get("requestContext", {}).get("identity", {}).get("userArn", "unknown")
+        inserted = products_db.insert_product(validated_data, user_arn)
+
+        return create_response(201, inserted)
+    except json.JSONDecodeError as e:
+        return create_response(400, {"error": f"Invalid JSON: {str(e)}"})
+    except ValidationError as e:
+        errors = [f"{err['loc'][0]}: {err['msg']}" for err in e.errors()]
+        return create_response(400, {"error": f"Validation failed: {', '.join(errors)}"})
+    except ValueError as e:
+        return create_response(409, {"error": str(e)})
     except Exception as e:
-        print(f"Error: {str(e)}")
-        return create_response(500, {"error": "Internal server error"})
+        print(f"Unexpected error: {str(e)}")
+        return create_response(500, {"error": f"Internal server error - {str(e)}"})

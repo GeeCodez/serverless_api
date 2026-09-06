@@ -1,4 +1,5 @@
-from utils import create_response, PRODUCTS_DB
+from utils import create_response
+import products_db
 
 def handler(event, context):
     try:
@@ -8,7 +9,7 @@ def handler(event, context):
         if not product_id:
             return create_response(400, {"error": "Product ID is required"})
         
-        product = PRODUCTS_DB.get(product_id)
+        product = products_db.get_product(product_id)
         if not product:
             return create_response(404, {"error": "Product not found"})
         

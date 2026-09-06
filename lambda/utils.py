@@ -1,10 +1,11 @@
 import json
+from decimal import Decimal
 
-# Dummy in-memory database for testing operations
-PRODUCTS_DB = {
-    "prod_123": {"id": "prod_123", "name": "Wireless Headphones", "price": 199.99, "category": "Electronics"},
-    "prod_456": {"id": "prod_456", "name": "USB-C Cable", "price": 12.99, "category": "Electronics"}
-}
+def decimal_serializer(obj):
+    """Custom JSON serializer for Decimal objects."""
+    if isinstance(obj, Decimal):
+        return float(obj)
+    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
 def create_response(status_code, body=None):
     """Formats standardized HTTP response for API Gateway Lambda Proxy Integration."""
@@ -16,5 +17,5 @@ def create_response(status_code, body=None):
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, Authorization"
         },
-        "body": json.dumps(body) if body is not None else ""
+        "body": json.dumps(body, default=decimal_serializer) if body is not None else ""
     }
