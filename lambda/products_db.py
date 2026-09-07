@@ -42,13 +42,17 @@ def insert_product(item, user_arn="unknown"):
         raise
 
 def update_product(product_id, fields, user_arn="unknown"):
-    timestamp = datetime.utcnow().isoformat() + "Z"
+    timestamp = datetime.now().isoformat() + "Z"
+    expected_version = fields.get("version")
+    new_version = expected_version + 1
+
     update_expression = """SET category = :category,
         title = :title,
         description = :description,
         price = :price,
         updated_at = :updated_at,
-        updated_by = :updated_by"""
+        updated_by = :updated_by,
+        version = :new_version"""
 
     expression_attribute_values = {
         ":category": fields["category"],
@@ -56,7 +60,10 @@ def update_product(product_id, fields, user_arn="unknown"):
         ":description": fields["description"],
         ":price": fields["price"],
         ":updated_at": timestamp,
-        ":updated_by": user_arn
+        ":new_version": new_version,
+        ":updated_by": user_arn,
+        ":expected_version": expected_version
+        
     }
 
     try:
@@ -64,11 +71,11 @@ def update_product(product_id, fields, user_arn="unknown"):
             Key={"id": product_id},
             UpdateExpression=update_expression,
             ExpressionAttributeValues=expression_attribute_values,
-            ConditionExpression="attribute_exists(id)",
+            ConditionExpression="attribute_exists(id) AND version = :expected_version",
             ReturnValues="ALL_NEW"
         )
         return response["Attributes"]
     except ClientError as e:
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-            raise ValueError(f"Product with id {product_id} does not exist")
+            raise ValueError(f"Product with id {product_id} does not exist or was already modified by another process. Refresh and try again.")
         raise

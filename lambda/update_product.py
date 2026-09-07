@@ -26,7 +26,8 @@ def handler(event, context):
         errors = [f"{err['loc'][0]}: {err['msg']}" for err in e.errors()]
         return create_response(400, {"error": f"Validation failed: {', '.join(errors)}"})
     except ValueError as e:
-        return create_response(404, {"error": str(e)})
+        status_code = 404 if "does not exist" in str(e) else 409
+        return create_response(status_code, {"error": str(e)})
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
         return create_response(500, {"error": f"Internal server error - {str(e)}"})

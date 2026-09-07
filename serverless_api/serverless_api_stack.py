@@ -58,7 +58,7 @@ class ServerlessApiStack(Stack):
         products_table.grant_read_data(get_product_fn)
         products_table.grant_read_data(query_products_fn)
         products_table.grant_write_data(insert_product_fn)
-        products_table.grant_write_data(update_product_fn)
+        products_table.grant_read_write_data(update_product_fn)
 
         api = apigw.RestApi(
             self, "ProductCatalogAPI",

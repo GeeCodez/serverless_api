@@ -7,8 +7,8 @@ class ProductInput(BaseModel):
     title: str =Field(min_length=1, max_length=100, description="Product title")
     price: Decimal = Field(gt=0, max_digits=10, decimal_places=2, description="Product price")
     category: str = Field(min_length=1, max_length=100, description="Product category")
-    description: str = Field(default="", max_length=100, description="Product description")
-    
+    description: str = Field(default="", max_length=200, description="Product description")
+    version: int = Field(default=1, description="Product version")
     
     @field_validator("category")
     def category_must_be_valid(cls, value):
