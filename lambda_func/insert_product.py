@@ -1,6 +1,7 @@
-import json, uuid, products_db
-from utils import create_response
-from product_schema import ProductInput
+import json, uuid
+from lambda_func import products_db
+from lambda_func.utils import create_response
+from lambda_func.product_schema import ProductInput
 from pydantic import ValidationError
 
 def handler(event, context):

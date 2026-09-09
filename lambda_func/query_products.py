@@ -1,5 +1,5 @@
-from utils import create_response
-import products_db
+from lambda_func.utils import create_response
+from lambda_func import products_db
 
 def handler(event, context):
     try:

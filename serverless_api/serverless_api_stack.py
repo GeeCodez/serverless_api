@@ -33,7 +33,7 @@ class ServerlessApiStack(Stack):
 
         lambda_kwargs = {
             "runtime": _lambda.Runtime.PYTHON_3_12,
-            "code": _lambda.Code.from_asset("lambda"),
+            "code": _lambda.Code.from_asset("lambda_func"),
             "environment": {
                 "TABLE_NAME": products_table.table_name
             }
