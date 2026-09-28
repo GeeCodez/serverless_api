@@ -10,7 +10,8 @@ class TestGetProducts:
         product = {
             "id": "product-1",
             "title": "Wireless Headphones",
-            "price": 199.99
+            "price": 199.99,
+            "images": []
         }
 
         with patch(
@@ -67,5 +68,6 @@ class TestGetProducts:
 
         assert response["statusCode"] == 500
         assert json.loads(response["body"]) == {
-            "error": "Database connection failed"
+            "error": "INTERNAL_SERVER_ERROR",
+            "message": "An unexpected error occurred. Please try again later."
         }

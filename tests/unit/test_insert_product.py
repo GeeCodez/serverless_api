@@ -21,8 +21,10 @@ class TestInsertProduct(unittest.TestCase):
         self.valid_event = {
             "body": json.dumps(self.valid_product),
             "requestContext": {
-                "identity": {
-                    "userArn": self.user_arn
+                "authorizer": {
+                    "claims": {
+                        "sub": self.user_arn
+                    }
                 }
             }
         }
@@ -108,7 +110,8 @@ class TestInsertProduct(unittest.TestCase):
         body = json.loads(response["body"])
 
         self.assertIn("Internal server error", body["error"])
-        self.assertIn("Database connection failed", body["error"])
+        self.assertEqual(body["error"], "INTERNAL_SERVER_ERROR")
+        self.assertNotIn("Database connection failed", response["body"])
 
 
 if __name__ == "__main__":

@@ -8,3 +8,7 @@ __pycache__
 .cdk.staging
 cdk.out
 typing_inspection*/
+*lesson*
+cdk*
+.gitignore
+template.yaml

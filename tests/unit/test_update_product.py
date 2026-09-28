@@ -26,14 +26,18 @@ class TestUpdateProduct(unittest.TestCase):
             },
             "body": json.dumps(self.update_data),
             "requestContext": {
-                "identity": {
-                    "userArn": self.user_arn
+                "authorizer": {
+                    "claims": {
+                        "sub": self.user_arn
+                    }
                 }
             }
         }
 
     @patch("lambda_func.update_product.products_db.update_product")
-    def test_update_product_success(self, mock_update_product):
+    @patch("lambda_func.update_product.products_db.get_product")
+    def test_update_product_success(self, mock_get_product, mock_update_product):
+        mock_get_product.return_value = {"owner_sub": self.user_arn}
         mock_update_product.return_value = {
             "id": self.product_id,
             "title": "Updated Wireless Headphones",
@@ -62,7 +66,8 @@ class TestUpdateProduct(unittest.TestCase):
         )
 
     @patch("lambda_func.update_product.products_db.update_product")
-    def test_product_id_is_required(self, mock_update_product):
+    @patch("lambda_func.update_product.products_db.get_product")
+    def test_product_id_is_required(self, mock_get_product, mock_update_product):
         event = self.valid_event.copy()
         event["pathParameters"] = None
 
@@ -76,7 +81,9 @@ class TestUpdateProduct(unittest.TestCase):
         mock_update_product.assert_not_called()
 
     @patch("lambda_func.update_product.products_db.update_product")
-    def test_invalid_json(self, mock_update_product):
+    @patch("lambda_func.update_product.products_db.get_product")
+    def test_invalid_json(self, mock_get_product, mock_update_product):
+        mock_get_product.return_value = {"owner_sub": self.user_arn}
         event = self.valid_event.copy()
         event["body"] = "{invalid json"
 
@@ -90,21 +97,21 @@ class TestUpdateProduct(unittest.TestCase):
         mock_update_product.assert_not_called()
 
     @patch("lambda_func.update_product.products_db.update_product")
-    def test_product_not_found(self, mock_update_product):
-        mock_update_product.side_effect = ValueError(
-            "Product with id product-123 does not exist"
-        )
-
+    @patch("lambda_func.update_product.products_db.get_product", return_value=None)
+    def test_product_not_found(self, mock_get_product, mock_update_product):
         response = handler(self.valid_event, None)
 
         self.assertEqual(response["statusCode"], 404)
 
         body = json.loads(response["body"])
 
-        self.assertIn("does not exist", body["error"])
+        self.assertEqual(body["error"], "Product not found.")
+        mock_update_product.assert_not_called()
 
     @patch("lambda_func.update_product.products_db.update_product")
-    def test_update_conflict(self, mock_update_product):
+    @patch("lambda_func.update_product.products_db.get_product")
+    def test_update_conflict(self, mock_get_product, mock_update_product):
+        mock_get_product.return_value = {"owner_sub": self.user_arn}
         mock_update_product.side_effect = ValueError(
             "Product was already modified by another process. Refresh and try again."
         )
@@ -118,7 +125,9 @@ class TestUpdateProduct(unittest.TestCase):
         self.assertIn("already modified", body["error"])
 
     @patch("lambda_func.update_product.products_db.update_product")
-    def test_unexpected_database_error(self, mock_update_product):
+    @patch("lambda_func.update_product.products_db.get_product")
+    def test_unexpected_database_error(self, mock_get_product, mock_update_product):
+        mock_get_product.return_value = {"owner_sub": self.user_arn}
         mock_update_product.side_effect = Exception(
             "Database connection failed"
         )
@@ -129,8 +138,8 @@ class TestUpdateProduct(unittest.TestCase):
 
         body = json.loads(response["body"])
 
-        self.assertIn("Internal server error", body["error"])
-        self.assertIn("Database connection failed", body["error"])
+        self.assertEqual(body["error"], "INTERNAL_SERVER_ERROR")
+        self.assertNotIn("Database connection failed", response["body"])
 
 
 if __name__ == "__main__":
