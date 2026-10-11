@@ -1,8 +1,5 @@
-import json
-import logging
-import uuid
+import json, logging, uuid
 from datetime import datetime, timezone
-
 from botocore.exceptions import BotoCoreError, ClientError
 
 from lambda_func import products_db

@@ -10,7 +10,6 @@ LOGGER = logging.getLogger(__name__)
 
 
 def handler(event, context):
-    """Enforce immutable product ownership before validating and applying an update."""
     user_id = get_authenticated_user_id(event)
     if not user_id:
         return create_response(401, {"error": "Authentication is required."})
@@ -33,13 +32,14 @@ def handler(event, context):
         except json.JSONDecodeError as e:
             return create_response(400, {"error": f"Invalid JSON: {str(e)}"})
 
-        # Validates payload and raises custom ValidationError if schema fails
+        # Validate the payload
         validated_data = validate_product_data(raw_data)
 
         updated = products_db.update_product(product_id, validated_data, user_id)
         # invalidate cache after updating a product
         cache.delete(f"product:{product_id}")
         return create_response(200, products_db.to_public_product(updated))
+    
     except Exception as error:
         LOGGER.exception("Product update failed")
         return create_error_response(error)

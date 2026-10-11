@@ -1,8 +1,7 @@
-import io , logging, os, warning
+import boto3, io , logging, os, warnings
 from datetime import datetime, timezone
 from urllib.parse import unquote_plus
 
-import boto3
 from PIL import Image, ImageOps, UnidentifiedImageError
 from botocore.config import Config
 

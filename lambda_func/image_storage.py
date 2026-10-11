@@ -1,9 +1,6 @@
-import os
-import json
-import boto3
+import os, json, boto3
 from botocore.config import Config
 
-# Pin SigV4 explicitly so links are signed consistently in every supported Region.
 s3_client = boto3.client(
     "s3",
     config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
@@ -16,16 +13,13 @@ ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
 def get_bucket_name():
-    """Read the deployment-selected bucket name rather than hard-coding an AWS resource."""
     return os.environ.get("IMAGES_BUCKET_NAME")
 
 
 def get_authenticated_user_id(event):
     """Return the Cognito subject injected by API Gateway, or None for unauthenticated calls."""
     claims = (
-        event.get("requestContext", {})
-        .get("authorizer", {})
-        .get("claims", {})
+        event.get("requestContext", {}).get("authorizer", {}).get("claims", {})
     )
     return claims.get("sub")
 
@@ -42,5 +36,5 @@ def parse_json_body(event):
 
 
 def public_product_owner_matches(product, user_id):
-    """Check the immutable owner attribute before issuing an upload capability."""
+    """Check owner matches"""
     return bool(user_id and product and product.get("owner_sub") == user_id)

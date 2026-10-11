@@ -4,7 +4,7 @@ import os, time, random, boto3
 from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
-from lambda_func.utils import ValidationError, TransientError
+from lambda_func.utils import ValidationError, TransientError, retry_on_transient_error
 
 TABLE_NAME = os.environ.get('TABLE_NAME')
 
@@ -12,35 +12,6 @@ if not TABLE_NAME:
     raise ValueError("TABLE_NAME environment variable is required")
 
 table = boto3.resource('dynamodb').Table(TABLE_NAME)
-
-def retry_on_transient_error(max_attempts=3, base_delay=0.5):
-    """Decorator to retry database operations on transient AWS failures with exponential backoff."""
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            attempts = 0
-            while attempts < max_attempts:
-                try:
-                    return func(*args, **kwargs)
-                except ClientError as e:
-                    error_code = e.response["Error"]["Code"]
-                    # List of AWS transient/throttle error codes eligible for retry
-                    transient_codes = [
-                        "ProvisionedThroughputExceededException",
-                        "RequestLimitExceeded",
-                        "InternalServerError",
-                        "ServiceUnavailable"
-                    ]
-                    if error_code in transient_codes:
-                        attempts += 1
-                        if attempts == max_attempts:
-                            raise TransientError(f"Database operation failed after {max_attempts} retries due to temporary service issues.")
-                        # Exponential backoff with jitter
-                        sleep_time = (base_delay * (2 ** (attempts - 1))) + random.uniform(0, 0.1)
-                        time.sleep(sleep_time)
-                    else:
-                        raise
-        return wrapper
-    return decorator
 
 @retry_on_transient_error()
 def get_product(product_id):

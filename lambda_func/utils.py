@@ -1,9 +1,6 @@
-"""Shared API response formatting and safe application error types."""
-
-import json
-import os
+import json, os, time, random, boto3
 from decimal import Decimal
-import time
+from botocore.exceptions import ClientError
 
 
 class APIError(Exception):
@@ -26,7 +23,6 @@ class TransientError(APIError):
         super().__init__(message, status_code=503, error_code="TRANSIENT_ERROR")
 
 def decimal_serializer(obj):
-    """Custom JSON serializer for Decimal objects."""
     if isinstance(obj, Decimal):
         return float(obj)
     raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
@@ -65,13 +61,41 @@ def create_error_response(error):
         }
         return create_response(error.status_code, body)
     
-    # Avoid returning internal exception details or infrastructure identifiers to callers.
     return create_response(500, {
         "error": "INTERNAL_SERVER_ERROR",
         "message": "An unexpected error occurred. Please try again later."
     })
+
+# database retry decorator for transient AWS errors
+def retry_on_transient_error(max_attempts=3, base_delay=0.5):
+    """Decorator to retry database operations on transient AWS failures with exponential backoff."""
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            attempts = 0
+            while attempts < max_attempts:
+                try:
+                    return func(*args, **kwargs)
+                except ClientError as e:
+                    error_code = e.response["Error"]["Code"]
+                    # List of AWS transient/throttle error codes eligible for retry
+                    transient_codes = [
+                        "ProvisionedThroughputExceededException",
+                        "RequestLimitExceeded",
+                        "InternalServerError",
+                        "ServiceUnavailable"
+                    ]
+                    if error_code in transient_codes:
+                        attempts += 1
+                        if attempts == max_attempts:
+                            raise TransientError(f"Database operation failed after {max_attempts} retries due to temporary service issues.")
+                        # Exponential backoff with jitter
+                        sleep_time = (base_delay * (2 ** (attempts - 1))) + random.uniform(0, 0.1)
+                        time.sleep(sleep_time)
+                    else:
+                        raise
+        return wrapper
+    return decorator
 class CircuitBreakerOpenException(APIError):
-    """Raised when the circuit breaker is open due to repeated downstream failures."""
     def __init__(self, message="Service temporarily unavailable due to high error rates. Circuit is OPEN."):
         super().__init__(message, status_code=503, error_code="CIRCUIT_BREAKER_OPEN")
 

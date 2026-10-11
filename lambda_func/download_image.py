@@ -1,14 +1,13 @@
 import logging
 
 from botocore.exceptions import BotoCoreError, ClientError
-
 from lambda_func import products_db
 from lambda_func.image_storage import (
     DOWNLOAD_URL_TTL_SECONDS,
     get_bucket_name,
     s3_client,
 )
-from lambda_func.utils import create_response
+from lambda_func.utils import create_response, create_error_response
 
 LOGGER = logging.getLogger(__name__)
 
@@ -69,6 +68,6 @@ def handler(event, context):
     except (ClientError, BotoCoreError):
         LOGGER.exception("Could not create product image download capability")
         return create_response(503, {"error": "Image downloads are temporarily unavailable."})
-    except Exception:
+    except Exception as e:
         LOGGER.exception("Unexpected image download URL failure")
-        return create_response(500, {"error": "Unable to create image download."})
+        return create_error_response(e)
