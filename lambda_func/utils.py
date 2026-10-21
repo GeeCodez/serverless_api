@@ -1,6 +1,7 @@
 import json, os, time, random, boto3
 from decimal import Decimal
 from botocore.exceptions import ClientError
+from enum import Enum
 
 
 class APIError(Exception):
@@ -66,9 +67,9 @@ def create_error_response(error):
         "message": "An unexpected error occurred. Please try again later."
     })
 
-# database retry decorator for transient AWS errors
+# Reusable retry decorator for transient AWS errors
 def retry_on_transient_error(max_attempts=3, base_delay=0.5):
-    """Decorator to retry database operations on transient AWS failures with exponential backoff."""
+    """Decorator to retry operations on transient AWS failures with exponential backoff."""
     def decorator(func):
         def wrapper(*args, **kwargs):
             attempts = 0
@@ -87,48 +88,77 @@ def retry_on_transient_error(max_attempts=3, base_delay=0.5):
                     if error_code in transient_codes:
                         attempts += 1
                         if attempts == max_attempts:
-                            raise TransientError(f"Database operation failed after {max_attempts} retries due to temporary service issues.")
+                            raise TransientError(f"Operation failed after {max_attempts} retries due to temporary service issues.")
                         # Exponential backoff with jitter
-                        sleep_time = (base_delay * (2 ** (attempts - 1))) + random.uniform(0, 0.1)
-                        time.sleep(sleep_time)
+                        exponential_delay = base_delay * (2 ** (attempts - 1))
+                        wait_time = (exponential_delay / 2) + random.uniform(0, exponential_delay / 2)
+                        time.sleep(wait_time)
                     else:
                         raise
         return wrapper
     return decorator
+
+# Reusable circuit breaker implementation for external service calls
 class CircuitBreakerOpenException(APIError):
     def __init__(self, message="Service temporarily unavailable due to high error rates. Circuit is OPEN."):
         super().__init__(message, status_code=503, error_code="CIRCUIT_BREAKER_OPEN")
 
+class CircuitState(Enum):
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
 class CircuitBreaker:
-    def __init__(self, failure_threshold=5, recovery_timeout=30):
-        self.failure_threshold = failure_threshold
-        self.recovery_timeout = recovery_timeout
+    def __init__(self, failure_threshold=5, timeout=30, success_threshold=2):
+        self.failure_threshold = failure_threshold  # Failures before opening
+        self.timeout = timeout  # Seconds before trying half-open
+        self.success_threshold = success_threshold  # Successes to close circuit
+        
         self.failure_count = 0
-        self.state = "CLOSED"  # CLOSED, OPEN, HALF-OPEN
-        self.last_failure_time = 0
+        self.success_count = 0
+        self.last_failure_time = None
+        self.state = CircuitState.CLOSED
+    
+    def call(self, func, *args, **kwargs):
+        # Check if circuit should move to half-open
+        if self.state == CircuitState.OPEN:
+            if time.time() - self.last_failure_time >= self.timeout:
+                self.state = CircuitState.HALF_OPEN
+                self.success_count = 0
+            else:
+                raise CircuitBreakerOpenException("Circuit is OPEN. Please try again later.")
+        
+        try:
+            # Attempt the call
+            result = func(*args, **kwargs)
+            self._on_success()
+            return result
+        except Exception as e:
+            self._on_failure()
+            raise e
+    
+    def _on_success(self):
+        self.failure_count = 0
+        
+        if self.state == CircuitState.HALF_OPEN:
+            self.success_count += 1
+            if self.success_count >= self.success_threshold:
+                self.state = CircuitState.CLOSED
+    
+    def _on_failure(self):
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        
+        if self.failure_count >= self.failure_threshold:
+            self.state = CircuitState.OPEN
 
-    def __call__(self, func):
-        def wrapper(*args, **kwargs):
-            now = time.time()
-            
-            # Check if recovery timeout has elapsed to move to HALF-OPEN
-            if self.state == "OPEN":
-                if now - self.last_failure_time > self.recovery_timeout:
-                    self.state = "HALF-OPEN"
-                else:
-                    raise CircuitBreakerOpenException()
+# # Usage in payment processing
+# payment_circuit = CircuitBreaker(failure_threshold=5, timeout=30)
 
-            try:
-                result = func(*args, **kwargs)
-                # Success in CLOSED or HALF-OPEN resets the breaker
-                if self.state in ["OPEN", "HALF-OPEN"]:
-                    self.state = "CLOSED"
-                    self.failure_count = 0
-                return result
-            except Exception as e:
-                self.failure_count += 1
-                self.last_failure_time = now
-                if self.failure_count >= self.failure_threshold or self.state == "HALF-OPEN":
-                    self.state = "OPEN"
-                raise e
-        return wrapper
+# def process_payment(order_id, amount):
+#     try:
+#         result = payment_circuit.call(payment_gateway.charge, amount=amount)
+#         return {"status": "success", "transaction_id": result.id}
+#     except Exception as e:
+#         # Circuit is open or payment failed
+#         return {"status": "failed", "error": str(e)}
